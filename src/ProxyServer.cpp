@@ -2,7 +2,7 @@
 
 #include <boost/asio.hpp>
 #include <iostream>
-#include <vector>
+#include <regex>
 
 #include "ProxyFinder.h"
 
@@ -13,8 +13,9 @@ namespace asio = boost::asio;
 struct ProxyServer::Data {
     Server defaultProxy;
     Server localServer;
+    ProxyFinder proxyFinder;
     asio::awaitable<void> startServer();
-    asio::awaitable<void> serveClient(tcp::socket socket);
+    asio::awaitable<void> serveClient(tcp::socket client);
 };
 
 ProxyServer::ProxyServer(const Config& config)
@@ -25,6 +26,9 @@ ProxyServer::ProxyServer(const Config& config)
     if (d_ptr->localServer.empty()) {
         d_ptr->localServer.host = "127.0.0.1";
         d_ptr->localServer.port = "3128";
+    }
+    if (!config.pac.empty()) {
+        d_ptr->proxyFinder.setPacFile(string{config.pac});
     }
 }
 
@@ -53,16 +57,27 @@ asio::awaitable<void> ProxyServer::Data::startServer()
     }
     cout << "Server started on " << acceptor.local_endpoint() << endl;
     while (true) {
-        tcp::socket socket = co_await acceptor.async_accept(asio::use_awaitable);
-        asio::co_spawn(executor, serveClient(move(socket)), asio::detached);
+        tcp::socket client = co_await acceptor.async_accept(asio::use_awaitable);
+        asio::co_spawn(executor, serveClient(move(client)), asio::detached);
     }
 }
 
-asio::awaitable<void> ProxyServer::Data::serveClient(tcp::socket socket)
+asio::awaitable<void> ProxyServer::Data::serveClient(tcp::socket client)
 {
-    vector<char> buf(1024);
-    while (true) {
-        auto bytesRead = co_await socket.async_read_some(asio::buffer(buf), asio::use_awaitable);
-        co_await asio::async_write(socket, asio::buffer(buf, bytesRead), asio::use_awaitable);
+    string buf, host, port;
+    Server proxy = defaultProxy;
+    if (proxy.empty()) {
+        co_await asio::async_read_until(client, asio::dynamic_buffer(buf, 1024), "\n", asio::use_awaitable);
+        auto pattern = "^\\w+ http://([^:/]+)(?::(\\d+))?/";
+        if (buf.starts_with("CONNECT")) {
+            pattern = "CONNECT ([^:]+):(\\d+) HTTP";
+        }
+        smatch match;
+        regex_search(buf, match, regex{pattern});
+        if (match.size() == 3) {
+            host = match[1];
+            port = match[2];
+        }
     }
+    cout << "host: " << host << ", port: " << port << endl;
 }
