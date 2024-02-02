@@ -7,7 +7,12 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 set(SRCS
     src/main.cpp
+    src/ProxyFinder.cpp
     src/ProxyServer.cpp
 )
 
 add_executable(${CMAKE_PROJECT_NAME} ${SRCS})
+
+target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE
+    pacparser
+)

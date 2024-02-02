@@ -4,13 +4,15 @@
 #include <iostream>
 #include <vector>
 
+#include "ProxyFinder.h"
+
 using namespace std;
 using boost::asio::ip::tcp;
 namespace asio = boost::asio;
 
 struct ProxyServer::Data {
-    string host;
-    string port;
+    Server defaultProxy;
+    Server localServer;
     asio::awaitable<void> startServer();
     asio::awaitable<void> serveClient(tcp::socket socket);
 };
@@ -18,18 +20,11 @@ struct ProxyServer::Data {
 ProxyServer::ProxyServer(const Config& config)
     : d_ptr{make_unique<Data>()}
 {
-    if (!config.listen.empty()) {
-        auto pos = config.listen.rfind(':');
-        if (pos > 0 && pos < config.listen.size() - 1) {
-            d_ptr->host = config.listen.substr(0, pos);
-            d_ptr->port = config.listen.substr(pos + 1, string::npos);
-        } else {
-            cerr << "Invalid listen address: " << config.listen << endl;
-        }
-    }
-    if (d_ptr->host.empty()) {
-        d_ptr->host = "127.0.0.1";
-        d_ptr->port = "3128";
+    d_ptr->defaultProxy = Server::fromString(config.server);
+    d_ptr->localServer = Server::fromString(config.listen);
+    if (d_ptr->localServer.empty()) {
+        d_ptr->localServer.host = "127.0.0.1";
+        d_ptr->localServer.port = "3128";
     }
 }
 
@@ -50,10 +45,10 @@ asio::awaitable<void> ProxyServer::Data::startServer()
     tcp::resolver resolver{executor};
     tcp::acceptor acceptor{executor};
     try {
-        auto result = resolver.resolve(host, port);
+        auto result = resolver.resolve(localServer.host, localServer.port);
         acceptor = tcp::acceptor{executor, *result};
     } catch (...) {
-        cerr << "Failed to start server on " << host << ':' << port << endl;
+        cerr << "Failed to start server on " << localServer.host << ':' << localServer.port << endl;
         co_return;
     }
     cout << "Server started on " << acceptor.local_endpoint() << endl;

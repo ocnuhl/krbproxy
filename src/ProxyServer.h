@@ -1,15 +1,15 @@
 #pragma once
 
 #include <memory>
-#include <string>
+#include <string_view>
 
 class ProxyServer
 {
 public:
     struct Config {
-        std::string server;
-        std::string pac;
-        std::string listen;
+        std::string_view server;
+        std::string_view pac;
+        std::string_view listen;
     };
     ProxyServer(const Config& config);
     ~ProxyServer();
