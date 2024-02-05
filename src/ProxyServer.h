@@ -17,5 +17,6 @@ public:
 
 private:
     struct Data;
+    class Session;
     std::unique_ptr<Data> d_ptr;
 };

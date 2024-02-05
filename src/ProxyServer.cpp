@@ -18,6 +18,21 @@ struct ProxyServer::Data {
     asio::awaitable<void> serveClient(tcp::socket client);
 };
 
+class ProxyServer::Session : public enable_shared_from_this<ProxyServer::Session>
+{
+public:
+    Session(tcp::socket client, tcp::socket remote, bool usesProxy);
+    void start();
+
+private:
+    void stop();
+    asio::awaitable<void> reader();
+    asio::awaitable<void> writer();
+    tcp::socket client;
+    tcp::socket remote;
+    bool usesProxy;
+};
+
 ProxyServer::ProxyServer(const Config& config)
     : d_ptr{make_unique<Data>()}
 {
@@ -78,6 +93,78 @@ asio::awaitable<void> ProxyServer::Data::serveClient(tcp::socket client)
             host = match[1];
             port = match[2];
         }
+        if (host.empty()) {
+            cerr << "Bad request: " << buf << endl;
+            co_return;
+        }
+        if (port.empty()) {
+            port = "80";
+        }
+        proxy = proxyFinder.findProxyForHost(host);
     }
-    cout << "host: " << host << ", port: " << port << endl;
+
+    tcp::resolver resolver{client.get_executor()};
+    tcp::socket remote{client.get_executor()};
+    if (proxy.empty()) {
+        co_await asio::async_write(client, asio::buffer("HTTP/1.1 501 Not Implemented\r\n\r\n"sv), asio::use_awaitable);
+        co_return;
+    } else {
+        auto result = co_await resolver.async_resolve(proxy.host, proxy.port, asio::use_awaitable);
+        co_await remote.async_connect(*result, asio::use_awaitable);
+        if (!buf.empty()) {
+            co_await asio::async_write(remote, asio::buffer(buf), asio::use_awaitable);
+        }
+    }
+    make_shared<ProxyServer::Session>(move(client), move(remote), !proxy.empty())->start();
+}
+
+ProxyServer::Session::Session(tcp::socket client, tcp::socket remote, bool usesProxy)
+    : client{move(client)}
+    , remote{move(remote)}
+    , usesProxy{usesProxy}
+{
+}
+
+void ProxyServer::Session::start()
+{
+    auto read = [self = shared_from_this()]() {
+        return self->reader();
+    };
+    auto write = [self = shared_from_this()]() {
+        return self->writer();
+    };
+    asio::co_spawn(client.get_executor(), read, asio::detached);
+    asio::co_spawn(client.get_executor(), write, asio::detached);
+}
+
+void ProxyServer::Session::stop()
+{
+    client.close();
+    remote.close();
+}
+
+asio::awaitable<void> ProxyServer::Session::reader()
+{
+    string buf(1024, '\0');
+    try {
+        while (true) {
+            auto n = co_await client.async_read_some(asio::buffer(buf), asio::use_awaitable);
+            co_await asio::async_write(remote, asio::buffer(buf, n), asio::use_awaitable);
+        }
+    } catch (exception&) {
+        stop();
+    }
+}
+
+asio::awaitable<void> ProxyServer::Session::writer()
+{
+    string buf(1024, '\0');
+    try {
+        while (true) {
+            auto n = co_await remote.async_read_some(asio::buffer(buf), asio::use_awaitable);
+            co_await asio::async_write(client, asio::buffer(buf, n), asio::use_awaitable);
+        }
+    } catch (exception&) {
+        stop();
+    }
 }
