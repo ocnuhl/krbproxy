@@ -8,7 +8,7 @@ class ProxyAuth
 public:
     ProxyAuth();
     ~ProxyAuth();
-    std::string_view getAuthHeader();
+    std::string_view getAuthHeader(std::string_view host);
 
 private:
     struct Data;

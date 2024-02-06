@@ -131,7 +131,10 @@ asio::awaitable<void> ProxyServer::Data::serveClient(tcp::socket client)
             co_await asio::async_write(remote, asio::buffer(line), asio::use_awaitable);
             bufview.remove_prefix(line.size());
         }
-        co_await asio::async_write(remote, asio::buffer(proxyAuth.getAuthHeader()), asio::use_awaitable);
+        string_view authHeader = proxyAuth.getAuthHeader(proxy.host);
+        if (!authHeader.empty()) {
+            co_await asio::async_write(remote, asio::buffer(authHeader), asio::use_awaitable);
+        }
         co_await asio::async_write(remote, asio::buffer(bufview), asio::use_awaitable);
     }
     make_shared<ProxyServer::Session>(move(client), move(remote))->start();

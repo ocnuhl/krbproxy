@@ -15,5 +15,6 @@ set(SRCS
 add_executable(${CMAKE_PROJECT_NAME} ${SRCS})
 
 target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE
+    gssapi_krb5
     pacparser
 )
