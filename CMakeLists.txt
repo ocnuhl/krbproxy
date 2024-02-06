@@ -7,6 +7,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 set(SRCS
     src/main.cpp
+    src/ProxyAuth.cpp
     src/ProxyFinder.cpp
     src/ProxyServer.cpp
 )

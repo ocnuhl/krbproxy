@@ -4,6 +4,7 @@
 #include <iostream>
 #include <regex>
 
+#include "ProxyAuth.h"
 #include "ProxyFinder.h"
 
 using namespace std;
@@ -13,6 +14,7 @@ namespace asio = boost::asio;
 struct ProxyServer::Data {
     Server defaultProxy;
     Server localServer;
+    ProxyAuth proxyAuth;
     ProxyFinder proxyFinder;
     asio::awaitable<void> startServer();
     asio::awaitable<void> serveClient(tcp::socket client);
@@ -21,7 +23,7 @@ struct ProxyServer::Data {
 class ProxyServer::Session : public enable_shared_from_this<ProxyServer::Session>
 {
 public:
-    Session(tcp::socket client, tcp::socket remote, bool usesProxy);
+    Session(tcp::socket client, tcp::socket remote);
     void start();
 
 private:
@@ -30,7 +32,6 @@ private:
     asio::awaitable<void> writer();
     tcp::socket client;
     tcp::socket remote;
-    bool usesProxy;
 };
 
 ProxyServer::ProxyServer(const Config& config)
@@ -79,10 +80,13 @@ asio::awaitable<void> ProxyServer::Data::startServer()
 
 asio::awaitable<void> ProxyServer::Data::serveClient(tcp::socket client)
 {
-    string buf, host, port;
+    string buf(1024, '\0');
+    string_view bufview;
+    string host, port;
     Server proxy = defaultProxy;
     if (proxy.empty()) {
-        co_await asio::async_read_until(client, asio::dynamic_buffer(buf, 1024), "\n", asio::use_awaitable);
+        auto n = co_await client.async_read_some(asio::buffer(buf), asio::use_awaitable);
+        bufview = string_view{buf.data(), n};
         auto pattern = "^\\w+ http://([^:/]+)(?::(\\d+))?/";
         if (buf.starts_with("CONNECT")) {
             pattern = "CONNECT ([^:]+):(\\d+) HTTP";
@@ -111,17 +115,31 @@ asio::awaitable<void> ProxyServer::Data::serveClient(tcp::socket client)
     } else {
         auto result = co_await resolver.async_resolve(proxy.host, proxy.port, asio::use_awaitable);
         co_await remote.async_connect(*result, asio::use_awaitable);
-        if (!buf.empty()) {
-            co_await asio::async_write(remote, asio::buffer(buf), asio::use_awaitable);
+        while (true) {
+            if (bufview.empty()) {
+                auto n = co_await client.async_read_some(asio::buffer(buf), asio::use_awaitable);
+                bufview = string_view{buf.data(), n};
+            }
+            auto pos = bufview.find('\n');
+            if (pos == bufview.npos) {
+                --pos;
+            }
+            string_view line = bufview.substr(0, pos + 1);
+            if (line == "\r\n") {
+                break;
+            }
+            co_await asio::async_write(remote, asio::buffer(line), asio::use_awaitable);
+            bufview.remove_prefix(line.size());
         }
+        co_await asio::async_write(remote, asio::buffer(proxyAuth.getAuthHeader()), asio::use_awaitable);
+        co_await asio::async_write(remote, asio::buffer(bufview), asio::use_awaitable);
     }
-    make_shared<ProxyServer::Session>(move(client), move(remote), !proxy.empty())->start();
+    make_shared<ProxyServer::Session>(move(client), move(remote))->start();
 }
 
-ProxyServer::Session::Session(tcp::socket client, tcp::socket remote, bool usesProxy)
+ProxyServer::Session::Session(tcp::socket client, tcp::socket remote)
     : client{move(client)}
     , remote{move(remote)}
-    , usesProxy{usesProxy}
 {
 }
 
