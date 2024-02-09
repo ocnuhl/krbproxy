@@ -1,6 +1,7 @@
 #include "ProxyAuth.h"
 
 #include <boost/beast/core/detail/base64.hpp>
+#include <cctype>
 #include <gssapi/gssapi.h>
 #include <string>
 
@@ -9,6 +10,7 @@ using namespace boost::beast::detail::base64;
 
 struct ProxyAuth::Data {
     string authHeader;
+    bool skipAuth(string_view host);
 };
 
 ProxyAuth::ProxyAuth()
@@ -22,6 +24,9 @@ ProxyAuth::~ProxyAuth()
 
 string_view ProxyAuth::getAuthHeader(string_view host)
 {
+    if (d_ptr->skipAuth(host)) {
+        return string_view{};
+    }
     gss_ctx_id_t ctx = GSS_C_NO_CONTEXT;
     OM_uint32 minor, ret_flags;
     gss_buffer_desc output_token = GSS_C_EMPTY_BUFFER;
@@ -42,4 +47,17 @@ string_view ProxyAuth::getAuthHeader(string_view host)
     gss_delete_sec_context(&minor, &ctx, NULL);
     gss_release_name(&minor, &target_name);
     return d_ptr->authHeader.size() == 33 ? string_view{} : d_ptr->authHeader;
+}
+
+bool ProxyAuth::Data::skipAuth(string_view host)
+{
+    bool hasAlpha = false;
+    for (char c : host) {
+        if (isalpha(static_cast<unsigned char>(c))) {
+            hasAlpha = true;
+        } else if (c == '.' && hasAlpha) {
+            return false; // Normal domain name
+        }
+    }
+    return true; // ipv4, ipv6, or plain host
 }
