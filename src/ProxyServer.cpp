@@ -241,7 +241,7 @@ asio::awaitable<void> ProxyServer::Session::processHeadDirectConnect()
         }
         partialLine = !line.ends_with('\n');
     }
-    co_await asio::async_write(client, asio::buffer("HTTP/1.1 200 Connection Established\r\n\r\n"), asio::use_awaitable);
+    co_await asio::async_write(client, asio::buffer("HTTP/1.1 200 Connection Established\r\n\r\n"sv), asio::use_awaitable);
 }
 
 asio::awaitable<void> ProxyServer::Session::processHeadDirectOther()
