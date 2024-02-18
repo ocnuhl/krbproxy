@@ -105,7 +105,7 @@ asio::awaitable<void> ProxyServer::Data::serveClient(tcp::socket client)
     }
     tcp::resolver resolver{client.get_executor()};
     tcp::socket remote{client.get_executor()};
-    auto result = co_await resolver.async_resolve(target.host, target.port, asio::use_awaitable);
+    auto result = resolver.resolve(target.host, target.port);
     co_await remote.async_connect(*result, asio::use_awaitable);
     make_shared<ProxyServer::Session>(move(client), move(remote), move(buf), proxy)->start();
 }
