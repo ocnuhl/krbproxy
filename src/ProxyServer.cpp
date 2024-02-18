@@ -148,6 +148,8 @@ void ProxyServer::Session::start()
     auto write = [self = shared_from_this()]() {
         return self->writer();
     };
+    client.set_option(tcp::no_delay{true});
+    remote.set_option(tcp::no_delay{true});
     asio::co_spawn(client.get_executor(), read, asio::detached);
     asio::co_spawn(client.get_executor(), write, asio::detached);
 }
