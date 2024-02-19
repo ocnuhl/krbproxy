@@ -63,6 +63,8 @@ ProxyServer::~ProxyServer()
 void ProxyServer::run()
 {
     asio::io_context context;
+    asio::signal_set signals(context, SIGINT, SIGTERM);
+    signals.async_wait([&](auto, auto) { context.stop(); });
     asio::co_spawn(context, d_ptr->startServer(), asio::detached);
     context.run();
 }

@@ -36,5 +36,5 @@ int main(int argc, char* argv[])
     }
     ProxyServer proxyServer{config};
     proxyServer.run();
-    return 1;
+    return 0;
 }
