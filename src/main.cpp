@@ -7,13 +7,12 @@ using namespace std;
 
 void usage()
 {
-    cout << R"(Usage: krbproxy [OPTION]...
-
-  -s, --server    upstream proxy server address
-  -p, --pac       local PAC file location
-  -l, --listen    proxy server listen address. default: 127.0.0.1:3128
-  -h, --help      print this help
-)";
+    cout << "krbproxy 1.0.0\n"
+            "Usage: krbproxy [OPTION]...\n\n"
+            "  -s, --server    upstream proxy server address\n"
+            "  -p, --pac       local PAC file location\n"
+            "  -l, --listen    proxy server listen address. default: 127.0.0.1:3128\n"
+            "  -h, --help      print this help\n";
 }
 
 int main(int argc, char* argv[])
