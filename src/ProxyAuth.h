@@ -1,16 +1,13 @@
 #pragma once
 
-#include <memory>
+#include <string>
 #include <string_view>
 
 class ProxyAuth
 {
 public:
-    ProxyAuth();
-    ~ProxyAuth();
-    std::string_view getAuthHeader(std::string_view host);
+    std::string getAuthHeader(std::string_view host);
 
 private:
-    struct Data;
-    std::unique_ptr<Data> d_ptr;
+    bool skipAuth(std::string_view host);
 };

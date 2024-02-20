@@ -217,7 +217,7 @@ asio::awaitable<void> ProxyServer::Session::processHeadProxied()
         co_await asio::async_write(remote, asio::buffer(line), asio::use_awaitable);
         partialLine = !line.ends_with('\n');
     }
-    string_view authHeader = proxyAuth.getAuthHeader(proxy.host);
+    string authHeader = proxyAuth.getAuthHeader(proxy.host);
     if (!authHeader.empty()) {
         co_await asio::async_write(remote, asio::buffer(authHeader), asio::use_awaitable);
     }
