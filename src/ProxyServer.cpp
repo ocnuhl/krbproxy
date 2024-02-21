@@ -34,6 +34,7 @@ private:
     asio::awaitable<void> processHeadProxied();
     asio::awaitable<void> processHeadDirectConnect();
     asio::awaitable<void> processHeadDirectOther();
+    asio::awaitable<void> flushAndRefill(vector<asio::const_buffer>&, string_view&);
     string_view readline(string_view& sv);
     tcp::socket client;
     tcp::socket remote;
@@ -187,19 +188,15 @@ asio::awaitable<void> ProxyServer::Session::readRemote()
 asio::awaitable<void> ProxyServer::Session::processHeadProxied()
 {
     vector<asio::const_buffer> bufs;
-    string_view bufview = readBuf;
+    string_view bufView = readBuf;
     string_view line;
     bool partialLine = false;
     while (true) {
-        if (bufview.empty()) {
-            co_await asio::async_write(remote, bufs, asio::use_awaitable);
-            bufs.clear();
-            readBuf.resize(1024);
-            auto n = co_await client.async_read_some(asio::buffer(readBuf), asio::use_awaitable);
-            bufview = string_view{readBuf.data(), n};
-        }
-        line = readline(bufview);
-        if (!partialLine && line.starts_with('\r'))
+        if (bufView.empty())
+            co_await flushAndRefill(bufs, bufView);
+        line = readline(bufView);
+        // "\r\n" or "\r". "\n" will be handled by readClient()
+        if (line.starts_with('\r') && !partialLine)
             break;
         bufs.push_back(asio::buffer(line));
         partialLine = !line.ends_with('\n');
@@ -207,22 +204,21 @@ asio::awaitable<void> ProxyServer::Session::processHeadProxied()
     string authHeader = proxyAuth.getAuthHeader(proxy.host);
     bufs.push_back(asio::buffer(authHeader));
     bufs.push_back(asio::buffer(line));
-    bufs.push_back(asio::buffer(bufview));
+    bufs.push_back(asio::buffer(bufView));
     co_await asio::async_write(remote, bufs, asio::use_awaitable);
 }
 
 asio::awaitable<void> ProxyServer::Session::processHeadDirectConnect()
 {
-    string_view bufview = readBuf;
+    vector<asio::const_buffer> bufs;
+    string_view bufView = readBuf;
     bool partialLine = false;
     while (true) {
-        if (bufview.empty()) {
-            readBuf.resize(1024);
-            auto n = co_await client.async_read_some(asio::buffer(readBuf), asio::use_awaitable);
-            bufview = string_view{readBuf.data(), n};
-        }
-        string_view line = readline(bufview);
-        if (!partialLine && (line == "\r\n" || line == "\n"))
+        if (bufView.empty())
+            co_await flushAndRefill(bufs, bufView);
+        string_view line = readline(bufView);
+        // Must be "\r\n". "\r" without "\n" is now allowed.
+        if (line == "\r\n" && !partialLine)
             break;
         partialLine = !line.ends_with('\n');
     }
@@ -232,8 +228,8 @@ asio::awaitable<void> ProxyServer::Session::processHeadDirectConnect()
 asio::awaitable<void> ProxyServer::Session::processHeadDirectOther()
 {
     vector<asio::const_buffer> bufs;
-    string_view bufview = readBuf;
-    string_view line = readline(bufview);
+    string_view bufView = readBuf;
+    string_view line = readline(bufView);
     bool partialLine = !line.ends_with('\n');
     bool skipWrite = false;
 
@@ -242,26 +238,32 @@ asio::awaitable<void> ProxyServer::Session::processHeadDirectOther()
     bufs.push_back(asio::buffer(request));
 
     while (true) {
-        if (bufview.empty()) {
-            co_await asio::async_write(remote, bufs, asio::use_awaitable);
-            bufs.clear();
-            readBuf.resize(1024);
-            auto n = co_await client.async_read_some(asio::buffer(readBuf), asio::use_awaitable);
-            bufview = string_view{readBuf.data(), n};
-        }
-        line = readline(bufview);
-        if (!partialLine) {
-            if (line == "\r\n" || line == "\n")
-                break;
+        if (bufView.empty())
+            co_await flushAndRefill(bufs, bufView);
+        line = readline(bufView);
+        // "\r\n" or "\r". "\n" will be handled by readClient()
+        if (line.starts_with('\r') && !partialLine)
+            break;
+        if (!partialLine)
             skipWrite = line.starts_with("Proxy-");
-        }
         partialLine = !line.ends_with('\n');
         if (!skipWrite)
             bufs.push_back(asio::buffer(line));
     }
     bufs.push_back(asio::buffer(line));
-    bufs.push_back(asio::buffer(bufview));
+    bufs.push_back(asio::buffer(bufView));
     co_await asio::async_write(remote, bufs, asio::use_awaitable);
+}
+
+asio::awaitable<void> ProxyServer::Session::flushAndRefill(vector<asio::const_buffer>& bufs, string_view& bufView)
+{
+    if (!bufs.empty()) {
+        co_await asio::async_write(remote, bufs, asio::use_awaitable);
+        bufs.clear();
+    }
+    readBuf.resize(1024);
+    auto n = co_await client.async_read_some(asio::buffer(readBuf), asio::use_awaitable);
+    bufView = string_view{readBuf.data(), n};
 }
 
 string_view ProxyServer::Session::readline(string_view& sv)
