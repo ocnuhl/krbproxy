@@ -199,32 +199,29 @@ asio::awaitable<void> ProxyServer::Session::writer()
 
 asio::awaitable<void> ProxyServer::Session::processHeadProxied()
 {
+    vector<asio::const_buffer> bufs;
     string_view bufview = readBuf;
     string_view line;
     bool partialLine = false;
     while (true) {
         if (bufview.empty()) {
+            co_await asio::async_write(remote, bufs, asio::use_awaitable);
+            bufs.clear();
             readBuf.resize(1024);
             auto n = co_await client.async_read_some(asio::buffer(readBuf), asio::use_awaitable);
             bufview = string_view{readBuf.data(), n};
         }
         line = readline(bufview);
-        if (!partialLine) {
-            if (line.starts_with('\r')) {
-                break;
-            }
-        }
-        co_await asio::async_write(remote, asio::buffer(line), asio::use_awaitable);
+        if (!partialLine && line.starts_with('\r'))
+            break;
+        bufs.push_back(asio::buffer(line));
         partialLine = !line.ends_with('\n');
     }
     string authHeader = proxyAuth.getAuthHeader(proxy.host);
-    if (!authHeader.empty()) {
-        co_await asio::async_write(remote, asio::buffer(authHeader), asio::use_awaitable);
-    }
-    co_await asio::async_write(remote, asio::buffer(line), asio::use_awaitable);
-    if (!bufview.empty()) {
-        co_await asio::async_write(remote, asio::buffer(bufview), asio::use_awaitable);
-    }
+    bufs.push_back(asio::buffer(authHeader));
+    bufs.push_back(asio::buffer(line));
+    bufs.push_back(asio::buffer(bufview));
+    co_await asio::async_write(remote, bufs, asio::use_awaitable);
 }
 
 asio::awaitable<void> ProxyServer::Session::processHeadDirectConnect()
@@ -238,11 +235,8 @@ asio::awaitable<void> ProxyServer::Session::processHeadDirectConnect()
             bufview = string_view{readBuf.data(), n};
         }
         string_view line = readline(bufview);
-        if (!partialLine) {
-            if (line == "\r\n" || line == "\n") {
-                break;
-            }
-        }
+        if (!partialLine && (line == "\r\n" || line == "\n"))
+            break;
         partialLine = !line.ends_with('\n');
     }
     co_await asio::async_write(client, asio::buffer("HTTP/1.1 200 Connection Established\r\n\r\n"sv), asio::use_awaitable);
@@ -250,35 +244,37 @@ asio::awaitable<void> ProxyServer::Session::processHeadDirectConnect()
 
 asio::awaitable<void> ProxyServer::Session::processHeadDirectOther()
 {
+    vector<asio::const_buffer> bufs;
     string_view bufview = readBuf;
     string_view line = readline(bufview);
-    string request;
-    regex_replace(back_inserter(request), line.begin(), line.end(), regex{"http://[^/]+/"}, "/");
-    co_await asio::async_write(remote, asio::buffer(request), asio::use_awaitable);
     bool partialLine = !line.ends_with('\n');
     bool skipWrite = false;
+
+    string request;
+    regex_replace(back_inserter(request), line.begin(), line.end(), regex{"http://[^/]+/"}, "/");
+    bufs.push_back(asio::buffer(request));
+
     while (true) {
         if (bufview.empty()) {
+            co_await asio::async_write(remote, bufs, asio::use_awaitable);
+            bufs.clear();
             readBuf.resize(1024);
             auto n = co_await client.async_read_some(asio::buffer(readBuf), asio::use_awaitable);
             bufview = string_view{readBuf.data(), n};
         }
         line = readline(bufview);
         if (!partialLine) {
-            if (line == "\r\n" || line == "\n") {
+            if (line == "\r\n" || line == "\n")
                 break;
-            }
             skipWrite = line.starts_with("Proxy-");
         }
         partialLine = !line.ends_with('\n');
-        if (!skipWrite) {
-            co_await asio::async_write(remote, asio::buffer(line), asio::use_awaitable);
-        }
+        if (!skipWrite)
+            bufs.push_back(asio::buffer(line));
     }
-    co_await asio::async_write(remote, asio::buffer(line), asio::use_awaitable);
-    if (!bufview.empty()) {
-        co_await asio::async_write(remote, asio::buffer(bufview), asio::use_awaitable);
-    }
+    bufs.push_back(asio::buffer(line));
+    bufs.push_back(asio::buffer(bufview));
+    co_await asio::async_write(remote, bufs, asio::use_awaitable);
 }
 
 string_view ProxyServer::Session::readline(string_view& sv)
