@@ -3,7 +3,7 @@
 #include <boost/asio.hpp>
 #include <iostream>
 #include <regex>
-#include <utility>
+#include <vector>
 
 #include "ProxyAuth.h"
 #include "ProxyFinder.h"
@@ -29,8 +29,8 @@ public:
 
 private:
     void stop();
-    asio::awaitable<void> reader();
-    asio::awaitable<void> writer();
+    asio::awaitable<void> readClient();
+    asio::awaitable<void> readRemote();
     asio::awaitable<void> processHeadProxied();
     asio::awaitable<void> processHeadDirectConnect();
     asio::awaitable<void> processHeadDirectOther();
@@ -51,9 +51,8 @@ ProxyServer::ProxyServer(const Config& config)
         d_ptr->localServer.host = "127.0.0.1";
         d_ptr->localServer.port = "3128";
     }
-    if (!config.pac.empty()) {
+    if (!config.pac.empty())
         d_ptr->proxyFinder.setPacFile(string{config.pac});
-    }
 }
 
 ProxyServer::~ProxyServer()
@@ -94,21 +93,18 @@ asio::awaitable<void> ProxyServer::Data::serveClient(tcp::socket client)
     auto n = co_await client.async_read_some(asio::buffer(buf), asio::use_awaitable);
     buf.resize(n);
     auto [host, port] = parseRequestUrl(buf);
-    if (host.empty()) {
+    if (host.empty())
         co_return;
-    }
     Server proxy = defaultProxy;
-    if (proxy.empty()) {
+    if (proxy.empty())
         proxy = proxyFinder.findProxyForHost(host);
-    }
     Server target = proxy;
-    if (target.empty()) {
+    if (target.empty())
         target = {host, port};
-    }
     tcp::resolver resolver{client.get_executor()};
     tcp::socket remote{client.get_executor()};
     auto result = resolver.resolve(target.host, target.port);
-    co_await remote.async_connect(*result, asio::use_awaitable);
+    co_await asio::async_connect(remote, result, asio::use_awaitable);
     make_shared<ProxyServer::Session>(move(client), move(remote), move(buf), proxy)->start();
 }
 
@@ -116,21 +112,18 @@ pair<string, string> ProxyServer::Data::parseRequestUrl(const string& buf)
 {
     string host, port;
     auto pattern = "^\\w+ http://([^:/]+)(?::(\\d+))?/";
-    if (buf.starts_with("CONNECT")) {
+    if (buf.starts_with("CONNECT"))
         pattern = "CONNECT ([^:]+):(\\d+) HTTP";
-    }
     smatch match;
     regex_search(buf, match, regex{pattern});
     if (match.size() == 3) {
         host = match[1];
         port = match[2];
     }
-    if (host.empty()) {
+    if (host.empty())
         cerr << "Bad request: " << buf << endl;
-    }
-    if (port.empty()) {
+    if (port.empty())
         port = "80";
-    }
     return {host, port};
 }
 
@@ -144,16 +137,12 @@ ProxyServer::Session::Session(tcp::socket client, tcp::socket remote, string rea
 
 void ProxyServer::Session::start()
 {
-    auto read = [self = shared_from_this()]() {
-        return self->reader();
-    };
-    auto write = [self = shared_from_this()]() {
-        return self->writer();
-    };
     client.set_option(tcp::no_delay{true});
     remote.set_option(tcp::no_delay{true});
-    asio::co_spawn(client.get_executor(), read, asio::detached);
-    asio::co_spawn(client.get_executor(), write, asio::detached);
+    auto pipe1 = [self = shared_from_this()]() { return self->readClient(); };
+    auto pipe2 = [self = shared_from_this()]() { return self->readRemote(); };
+    asio::co_spawn(client.get_executor(), pipe1, asio::detached);
+    asio::co_spawn(client.get_executor(), pipe2, asio::detached);
 }
 
 void ProxyServer::Session::stop()
@@ -162,18 +151,16 @@ void ProxyServer::Session::stop()
     remote.close();
 }
 
-asio::awaitable<void> ProxyServer::Session::reader()
+asio::awaitable<void> ProxyServer::Session::readClient()
 {
     try {
-        if (proxy.empty()) {
-            if (readBuf.starts_with("CONNECT")) {
+        if (proxy.empty())
+            if (readBuf.starts_with("CONNECT"))
                 co_await processHeadDirectConnect();
-            } else {
+            else
                 co_await processHeadDirectOther();
-            }
-        } else {
+        else
             co_await processHeadProxied();
-        }
         readBuf.resize(1024);
         while (true) {
             auto n = co_await client.async_read_some(asio::buffer(readBuf), asio::use_awaitable);
@@ -184,7 +171,7 @@ asio::awaitable<void> ProxyServer::Session::reader()
     }
 }
 
-asio::awaitable<void> ProxyServer::Session::writer()
+asio::awaitable<void> ProxyServer::Session::readRemote()
 {
     string buf(1024, '\0');
     try {
@@ -280,9 +267,8 @@ asio::awaitable<void> ProxyServer::Session::processHeadDirectOther()
 string_view ProxyServer::Session::readline(string_view& sv)
 {
     auto pos = sv.find('\n');
-    if (pos == sv.npos) {
+    if (pos == sv.npos)
         --pos;
-    }
     string_view line = sv.substr(0, pos + 1);
     sv.remove_prefix(line.size());
     return line;
