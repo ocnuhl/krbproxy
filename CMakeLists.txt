@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.25)
+cmake_minimum_required(VERSION 3.18)
 
 project(krbproxy)
 
@@ -18,3 +18,8 @@ target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE
     gssapi_krb5
     pacparser
 )
+
+if(${CMAKE_CXX_COMPILER_VERSION} VERSION_LESS 11)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fcoroutines")
+    target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE pthread)
+endif()
