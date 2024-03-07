@@ -18,7 +18,7 @@ Then download the latest binary from release page.
 
 It can also be compiled from source. The build dependencies are `cmake g++ make libpacparser-dev libkrb5-dev libboost-dev`.
 
-This project uses C++20 coroutine feature, so g++-10 or a higher version is required to compile.
+This project uses C++20 coroutine feature, so `g++-10` or a higher version is required to compile.
 
 ## Usage
 
@@ -32,7 +32,7 @@ We can either specify an upstream server, or a PAC file.
 
     `krbproxy -p /path/to/proxy.pac`
 
-- Listen on a difference address rather than the default (127.0.0.1:3128):
+- Listen on a difference address rather than the default (`127.0.0.1:3128`):
 
     `krbproxy -p /path/to/proxy.pac -l 192.168.1.100:8888`
 
@@ -56,11 +56,11 @@ Edit `/etc/krb5.conf`, config `default_realm` and `default_client_keytab_name` i
 
 ## Note
 
-- Krbproxy skips authentication for IP addresses and plain hosts. This is useful if the PAC file may return more than one proxy server, and some of them do not require authentication. 
+- Krbproxy skips authentication for IP addresses and plain hosts. This is useful if the PAC file returns more than one proxy server but some of them do not require authentication. 
 
-- If PAC file returns more than one proxy for a URL, Krbproxy uses the first one and ignores others. (Yes, the author is lazy and chooses the easiest implementation).
+- If PAC file returns more than one proxy for a URL, Krbproxy uses the first one and ignores others. (Yes, the author is lazy and chose the easiest implementation).
 
-- Krbproxy does not support upstream socks proxy.
+- Krbproxy does not support upstream SOCKS proxy.
 
 See example PAC file below:
 
@@ -68,8 +68,8 @@ See example PAC file below:
 function FindProxyForURL(url, host) {
     if (/(?:^|\.)pattern1\.com$/.test(host)) return "PROXY proxy2.mycompany.net:8080; PROXY 10.0.3.6:8080"; // Use "PROXY proxy2.mycompany.net:8080" and ignore "PROXY 10.0.3.6:8080"
     if (/(?:^|\.)pattern2\.com$/.test(host)) return "DIRECT"; // OK, direct connection is supported
-    if (/(?:^|\.)pattern3\.com$/.test(host)) return "SOCKS5 127.0.0.1:1080"; // No, socks proxy is not supported
-    if (/(?:^|\.)pattern4\.com$/.test(host)) return "PROXY localhost:8080"; // Disable authentication (Plan host)
+    if (/(?:^|\.)pattern3\.com$/.test(host)) return "SOCKS5 127.0.0.1:1080"; // No, SOCKS proxy is not supported
+    if (/(?:^|\.)pattern4\.com$/.test(host)) return "PROXY localhost:8080"; // Disable authentication (Plain host)
     if (/(?:^|\.)pattern5\.com$/.test(host)) return "PROXY 10.0.2.8:8080"; // Disable authentication (IP address)
     return "PROXY proxy.mycompany.net:8080"; // Enable authentication (Domain name)
 }
