@@ -1,8 +1,10 @@
 #include "ProxyServer.h"
 
 #include <boost/asio.hpp>
+#include <future>
 #include <iostream>
 #include <regex>
+#include <thread>
 #include <vector>
 
 #include "ProxyAuth.h"
@@ -16,15 +18,20 @@ struct ProxyServer::Data {
     Server defaultProxy;
     Server localServer;
     ProxyFinder proxyFinder;
+    asio::io_context contextAuth;
+    asio::io_context contextMain;
+    void run();
+    void stop();
     asio::awaitable<void> startServer();
     asio::awaitable<void> serveClient(tcp::socket client);
     pair<string, string> parseRequestUrl(const string& buf);
+    asio::awaitable<string> authProxy(Server proxy);
 };
 
 class ProxyServer::Session : public enable_shared_from_this<ProxyServer::Session>
 {
 public:
-    Session(tcp::socket client, tcp::socket remote, string readBuf, Server proxy);
+    Session(tcp::socket client, tcp::socket remote, string readBuf, string authHeader, Server proxy);
     void start();
 
 private:
@@ -39,8 +46,8 @@ private:
     tcp::socket client;
     tcp::socket remote;
     string readBuf;
+    string authHeader;
     Server proxy;
-    ProxyAuth proxyAuth;
 };
 
 ProxyServer::ProxyServer(const Config& config)
@@ -62,11 +69,25 @@ ProxyServer::~ProxyServer()
 
 void ProxyServer::run()
 {
-    asio::io_context context;
-    asio::signal_set signals(context, SIGINT, SIGTERM);
-    signals.async_wait([&](auto, auto) { context.stop(); });
-    asio::co_spawn(context, d_ptr->startServer(), asio::detached);
-    context.run();
+    d_ptr->run();
+}
+
+void ProxyServer::Data::run()
+{
+    jthread threadAuth{[this]() {
+        auto guard = asio::make_work_guard(contextAuth);
+        contextAuth.run();
+    }};
+    asio::signal_set signals(contextMain, SIGINT, SIGTERM);
+    signals.async_wait([&](auto, auto) { stop(); });
+    asio::co_spawn(contextMain, startServer(), asio::detached);
+    contextMain.run();
+}
+
+void ProxyServer::Data::stop()
+{
+    contextAuth.stop();
+    contextMain.stop();
 }
 
 asio::awaitable<void> ProxyServer::Data::startServer()
@@ -75,10 +96,11 @@ asio::awaitable<void> ProxyServer::Data::startServer()
     tcp::resolver resolver{executor};
     tcp::acceptor acceptor{executor};
     try {
-        auto result = resolver.resolve(localServer.host, localServer.port);
+        auto result = co_await resolver.async_resolve(localServer.host, localServer.port, asio::use_awaitable);
         acceptor = tcp::acceptor{executor, *result};
     } catch (...) {
         cerr << "Failed to start server on " << localServer.host << ':' << localServer.port << endl;
+        stop();
         co_return;
     }
     cout << "Server started on " << acceptor.local_endpoint() << endl;
@@ -104,9 +126,10 @@ asio::awaitable<void> ProxyServer::Data::serveClient(tcp::socket client)
         target = {host, port};
     tcp::resolver resolver{client.get_executor()};
     tcp::socket remote{client.get_executor()};
-    auto result = resolver.resolve(target.host, target.port);
+    auto result = co_await resolver.async_resolve(target.host, target.port, asio::use_awaitable);
     co_await asio::async_connect(remote, result, asio::use_awaitable);
-    make_shared<ProxyServer::Session>(move(client), move(remote), move(buf), proxy)->start();
+    string authHeader = co_await authProxy(proxy);
+    make_shared<ProxyServer::Session>(move(client), move(remote), move(buf), move(authHeader), proxy)->start();
 }
 
 pair<string, string> ProxyServer::Data::parseRequestUrl(const string& buf)
@@ -128,10 +151,24 @@ pair<string, string> ProxyServer::Data::parseRequestUrl(const string& buf)
     return {host, port};
 }
 
-ProxyServer::Session::Session(tcp::socket client, tcp::socket remote, string readBuf, Server proxy)
+asio::awaitable<string> ProxyServer::Data::authProxy(Server proxy)
+{
+    promise<string> headerPromise;
+    future<string> headerFuture = headerPromise.get_future();
+    asio::post(contextAuth, [&headerPromise, proxy]() {
+        ProxyAuth proxyAuth;
+        string authHeader = proxyAuth.getAuthHeader(proxy.host);
+        headerPromise.set_value(move(authHeader));
+    });
+    co_await asio::post(contextAuth, asio::use_awaitable);
+    co_return headerFuture.get();
+}
+
+ProxyServer::Session::Session(tcp::socket client, tcp::socket remote, string readBuf, string authHeader, Server proxy)
     : client{move(client)}
     , remote{move(remote)}
     , readBuf{move(readBuf)}
+    , authHeader{move(authHeader)}
     , proxy{proxy}
 {
 }
@@ -201,7 +238,6 @@ asio::awaitable<void> ProxyServer::Session::processHeadProxied()
         bufs.push_back(asio::buffer(line));
         partialLine = !line.ends_with('\n');
     }
-    string authHeader = proxyAuth.getAuthHeader(proxy.host);
     bufs.push_back(asio::buffer(authHeader));
     bufs.push_back(asio::buffer(line));
     bufs.push_back(asio::buffer(bufView));

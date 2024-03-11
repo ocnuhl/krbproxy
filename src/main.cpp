@@ -7,7 +7,7 @@ using namespace std;
 
 void usage()
 {
-    cout << "krbproxy 1.0.0\n"
+    cout << "krbproxy 1.0.1\n"
             "Usage: krbproxy [OPTION]...\n\n"
             "  -s, --server    upstream proxy server address\n"
             "  -p, --pac       local PAC file location\n"
