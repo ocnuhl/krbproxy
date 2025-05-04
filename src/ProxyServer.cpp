@@ -97,7 +97,7 @@ asio::awaitable<void> ProxyServer::Data::startServer()
     tcp::acceptor acceptor{executor};
     try {
         auto result = co_await resolver.async_resolve(localServer.host, localServer.port, asio::use_awaitable);
-        acceptor = tcp::acceptor{executor, *result};
+        acceptor = tcp::acceptor{executor, *result.cbegin()};
     } catch (...) {
         cerr << "Failed to start server on " << localServer.host << ':' << localServer.port << endl;
         stop();
