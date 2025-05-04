@@ -74,7 +74,7 @@ void ProxyServer::run()
 
 void ProxyServer::Data::run()
 {
-    jthread threadAuth{[this]() {
+    thread threadAuth{[this]() {
         auto guard = asio::make_work_guard(contextAuth);
         contextAuth.run();
     }};
@@ -82,6 +82,7 @@ void ProxyServer::Data::run()
     signals.async_wait([&](auto, auto) { stop(); });
     asio::co_spawn(contextMain, startServer(), asio::detached);
     contextMain.run();
+    threadAuth.join();
 }
 
 void ProxyServer::Data::stop()
