@@ -107,7 +107,7 @@ asio::awaitable<void> ProxyServer::Data::startServer()
     cout << "Server started on " << acceptor.local_endpoint() << endl;
     while (true) {
         tcp::socket client = co_await acceptor.async_accept(asio::use_awaitable);
-        asio::co_spawn(executor, serveClient(move(client)), asio::detached);
+        asio::co_spawn(executor, serveClient(std::move(client)), asio::detached);
     }
 }
 
@@ -130,7 +130,7 @@ asio::awaitable<void> ProxyServer::Data::serveClient(tcp::socket client)
     auto result = co_await resolver.async_resolve(target.host, target.port, asio::use_awaitable);
     co_await asio::async_connect(remote, result, asio::use_awaitable);
     string authHeader = co_await authProxy(proxy);
-    make_shared<ProxyServer::Session>(move(client), move(remote), move(buf), move(authHeader), proxy)->start();
+    make_shared<ProxyServer::Session>(std::move(client), std::move(remote), std::move(buf), std::move(authHeader), proxy)->start();
 }
 
 pair<string, string> ProxyServer::Data::parseRequestUrl(const string& buf)
@@ -159,17 +159,17 @@ asio::awaitable<string> ProxyServer::Data::authProxy(Server proxy)
     asio::post(contextAuth, [&headerPromise, proxy]() {
         ProxyAuth proxyAuth;
         string authHeader = proxyAuth.getAuthHeader(proxy.host);
-        headerPromise.set_value(move(authHeader));
+        headerPromise.set_value(std::move(authHeader));
     });
     co_await asio::post(contextAuth, asio::use_awaitable);
     co_return headerFuture.get();
 }
 
 ProxyServer::Session::Session(tcp::socket client, tcp::socket remote, string readBuf, string authHeader, Server proxy)
-    : client{move(client)}
-    , remote{move(remote)}
-    , readBuf{move(readBuf)}
-    , authHeader{move(authHeader)}
+    : client{std::move(client)}
+    , remote{std::move(remote)}
+    , readBuf{std::move(readBuf)}
+    , authHeader{std::move(authHeader)}
     , proxy{proxy}
 {
 }
