@@ -20,8 +20,10 @@ find_library(pacparser_lib pacparser REQUIRED)
 
 if(${CMAKE_HOST_APPLE})
     find_library(gss_lib GSS REQUIRED)
+    set(rpath "@loader_path;@loader_path/../lib")
 else()
     find_library(gss_lib gssapi_krb5 REQUIRED)
+    set(rpath "$ORIGIN;$ORIGIN/../lib")
 endif()
 
 target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE
@@ -33,3 +35,9 @@ if(${CMAKE_CXX_COMPILER_VERSION} VERSION_LESS 11)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fcoroutines")
     target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE pthread)
 endif()
+
+set_target_properties(${CMAKE_PROJECT_NAME} PROPERTIES
+    INSTALL_RPATH "${rpath}"
+)
+
+install(TARGETS ${CMAKE_PROJECT_NAME} DESTINATION bin)
