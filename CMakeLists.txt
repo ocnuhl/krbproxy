@@ -14,6 +14,10 @@ set(SRCS
 
 add_executable(${CMAKE_PROJECT_NAME} ${SRCS})
 
+find_file(asio_h boost/asio.hpp REQUIRED)
+find_file(pacparser_h pacparser.h REQUIRED)
+find_library(pacparser_lib pacparser REQUIRED)
+
 target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE
     gssapi_krb5
     pacparser
