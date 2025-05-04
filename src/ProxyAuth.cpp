@@ -2,7 +2,12 @@
 
 #include <boost/beast/core/detail/base64.hpp>
 #include <cctype>
+
+#ifdef __APPLE__
+#include <GSS/gssapi.h>
+#else
 #include <gssapi/gssapi.h>
+#endif
 
 using namespace std;
 using namespace boost::beast::detail::base64;

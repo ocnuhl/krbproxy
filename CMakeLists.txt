@@ -18,9 +18,15 @@ find_file(asio_h boost/asio.hpp REQUIRED)
 find_file(pacparser_h pacparser.h REQUIRED)
 find_library(pacparser_lib pacparser REQUIRED)
 
+if(${CMAKE_HOST_APPLE})
+    find_library(gss_lib GSS REQUIRED)
+else()
+    find_library(gss_lib gssapi_krb5 REQUIRED)
+endif()
+
 target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE
-    gssapi_krb5
-    pacparser
+    ${gss_lib}
+    ${pacparser_lib}
 )
 
 if(${CMAKE_CXX_COMPILER_VERSION} VERSION_LESS 11)
