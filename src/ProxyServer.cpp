@@ -106,8 +106,14 @@ asio::awaitable<void> ProxyServer::Data::startServer()
     }
     cout << "Server started on " << acceptor.local_endpoint() << endl;
     while (true) {
-        tcp::socket client = co_await acceptor.async_accept(asio::use_awaitable);
-        asio::co_spawn(executor, serveClient(std::move(client)), asio::detached);
+        try {
+            while (true) {
+                tcp::socket client = co_await acceptor.async_accept(asio::use_awaitable);
+                asio::co_spawn(executor, serveClient(std::move(client)), asio::detached);
+            }
+        } catch (exception& e) {
+            cerr << "Connection limit reached" << endl;
+        }
     }
 }
 
