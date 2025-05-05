@@ -6,19 +6,11 @@ This kind of upstream HTTP proxy server is often deployed in a corporate network
 
 Krbproxy can also be used as an HTTP proxy server with PAC support, even if it's not running in a corporate network that requires Kerberos.
 
-Currently Krbproxy only supports Linux. I have tested on Debian 11 and Ubuntu 20.04. It may also work on other distributions.
+Currently Krbproxy supports Linux and macOS.
 
 ## Installation
 
-Install runtime dependencies. For Debian or Ubuntu, simply run:
-
-`sudo apt install libgssapi-krb5-2 libpacparser1`
-
-Then download the latest binary from release page.
-
-It can also be compiled from source. The build dependencies are `cmake g++ make libpacparser-dev libkrb5-dev libboost-dev`.
-
-This project uses C++20 coroutine feature, so `g++-10` or a higher version is required to compile.
+Download from release page, or compile from source.
 
 ## Usage
 
